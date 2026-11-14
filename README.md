@@ -1,29 +1,35 @@
 # USCE APT repository
 
 The publication workflow builds a signed APT repository from published GitHub
-release packages. It does not require Launchpad. The initial package target is
-**Ubuntu 22.04 (jammy), amd64**, matching the native DEB build in UltraStar-CE/USCE#253.
+release packages. The package target is **Ubuntu 22.04 (Jammy), amd64**, matching
+the native DEB build from UltraStar-CE/USCE#313.
 Other Ubuntu series, Debian releases and architectures need their own package
 build and installation checks before being added. An AppImage remains available
 for other Linux installations.
 
-The URL below is the planned repository address. It becomes usable only after
-the DEB packaging change is merged, the one-time setup is done,
-and a stable release containing a DEB has been published. This workflow owns the
-dedicated apt repository's GitHub Pages site.
+The archive is hosted at [ultrastar-ce.github.io/apt](https://ultrastar-ce.github.io/apt/).
 
-## Installation after publication
+## Installation
 
 On Ubuntu 22.04 amd64:
 
 ```sh
+(
+set -e
+temporary=$(mktemp -d)
+trap 'rm -rf -- "$temporary"' EXIT
+expected=3ABECBE6C88AA77D8356596A7CBAC6F702CA6EE5
 sudo apt install ca-certificates curl gnupg
 sudo install -d -m 0755 /etc/apt/keyrings
-curl --fail --location --output /tmp/usce-archive-keyring.asc \
+curl --fail --location --output "$temporary/usce.asc" \
   https://ultrastar-ce.github.io/apt/usce-archive-keyring.asc
-gpg --show-keys --with-fingerprint /tmp/usce-archive-keyring.asc
-# Compare the fingerprint with the maintainer's published archive fingerprint.
-sudo install -m 0644 /tmp/usce-archive-keyring.asc /etc/apt/keyrings/usce.asc
+actual=$(gpg --batch --show-keys --with-colons "$temporary/usce.asc" |
+  awk -F: '$1=="pub" {primary=1; next} primary && $1=="fpr" {print $10; primary=0}')
+if [ "$actual" != "$expected" ]; then
+  printf 'USCE archive key fingerprint mismatch. Check the project instructions.\n' >&2
+  exit 1
+fi
+sudo install -m 0644 "$temporary/usce.asc" /etc/apt/keyrings/usce.asc
 sudo tee /etc/apt/sources.list.d/usce.sources >/dev/null <<'EOF'
 Types: deb
 URIs: https://ultrastar-ce.github.io/apt
@@ -34,6 +40,7 @@ Signed-By: /etc/apt/keyrings/usce.asc
 EOF
 sudo apt update
 sudo apt install usce
+)
 ```
 
 Later versions arrive through normal APT updates. The package name is `usce`,
@@ -41,8 +48,8 @@ so it does not replace the distribution's `ultrastardx` package.
 
 ## One-time maintainer setup
 
-1. Finish the native DEB packaging change (UltraStar-CE/USCE#253). Stable release downloads must
-   include `USCE-linux-deb-VERSION.deb` and its entry in `SHA256SUMS`.
+1. Stable release downloads must include `USCE-linux-deb-VERSION.deb` and its
+   entry in `SHA256SUMS`.
 2. Enable **Settings / Pages / Build and deployment / GitHub Actions** for
    `UltraStar-CE/apt`. Check the `github-pages` deployment environment rules.
 3. Create a dedicated archive signing key on a trusted local machine, keeping
